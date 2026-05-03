@@ -3,7 +3,7 @@
 Uso:
     python manage.py setup_inicial
 
-Crea los 3 cuidadores (Yo, Papá, Tío) y un CicloConfig activo cuya
+Crea los 3 cuidadores (Iván, Antonio, José) y un CicloConfig activo cuya
 rotación es DIARIA (intervalo_dias=1): cada día le toca a la siguiente
 persona del orden.
 """
@@ -17,11 +17,11 @@ from turnos.models import CicloConfig, CicloOrden, Cuidador
 
 # Lista de cuidadores que se crean si no existen.
 # El ORDEN de esta lista determina la posición inicial en el ciclo
-# (Yo=0 primero, Papá=1 segundo, Tío=2 tercero).
+# (Iván=0 primero, Antonio=1 segundo, José=2 tercero).
 CUIDADORES_INICIALES = [
-    {"nombre": "Yo", "color": "#0d6efd"},     # Azul Bootstrap (primary)
-    {"nombre": "Papá", "color": "#198754"},   # Verde Bootstrap (success)
-    {"nombre": "Tío", "color": "#dc3545"},    # Rojo Bootstrap (danger)
+    {"nombre": "Iván", "color": "#0d6efd"},
+    {"nombre": "Antonio", "color": "#198754"},
+    {"nombre": "José", "color": "#dc3545"},
 ]
 
 # intervalo_dias = 1 → cada día rota al siguiente cuidador.
@@ -33,7 +33,7 @@ class Command(BaseCommand):
     """Comando idempotente: se puede ejecutar varias veces sin duplicar datos."""
 
     help = (
-        "Crea los cuidadores iniciales (Yo, Papá, Tío) y un ciclo activo "
+        "Crea los cuidadores iniciales (Iván, Antonio, José) y un ciclo activo "
         "con rotación diaria si todavía no existe ninguno activo."
     )
 
