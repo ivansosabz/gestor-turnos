@@ -25,10 +25,10 @@ services:
         value: "False"
 
       - key: DJANGO_ALLOWED_HOSTS
-        value: no-me-olvido.onrender.com
+        value: "*"
 
       - key: CSRF_TRUSTED_ORIGINS
-        value: https://no-me-olvido.onrender.com
+        value: https://*.onrender.com
 
 databases:
   - name: no-me-olvido-db
