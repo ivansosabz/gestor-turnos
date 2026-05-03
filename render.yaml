@@ -2,7 +2,7 @@ services:
   - type: web
     name: no-me-olvido
     env: python
-    region: sao-paulo
+    region: oregon
     plan: free
 
     buildCommand: >
@@ -33,5 +33,5 @@ services:
 databases:
   - name: no-me-olvido-db
     databaseName: no_me_olvido
-    region: sao-paulo
+    region: oregon
     plan: free
