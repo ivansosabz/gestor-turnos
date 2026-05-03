@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+{% comment %}
+  registrar.html — Formulario para crear/actualizar un TurnoReal.
+
+  Acepta ?fecha=YYYY-MM-DD para prellenar la fecha (cuando se llega
+  desde el click en un día del calendario). Hace POST a la API por
+  fetch (no submit nativo) para poder mostrar errores in-place.
+{% endcomment %}
+
+{% block title %}Registrar turno - No Me Olvido{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-7">
+    <h1 class="h3 mb-3">Registrar turno</h1>
+
+    {# Banner de error/éxito. JS le pone clase y texto. #}
+    <div id="alerta" class="alert d-none" role="alert"></div>
+
+    <form id="form-registrar" class="card card-body">
+      <div class="mb-3">
+        <label for="fecha" class="form-label">Fecha</label>
+        <input type="date" class="form-control" id="fecha" name="fecha"
+               value="{{ fecha_pre }}" required>
+      </div>
+
+      <div class="mb-3">
+        <label for="tipo" class="form-label">Tipo</label>
+        <select class="form-select" id="tipo" name="tipo" required>
+          <option value="normal">Normal (lo que correspondía)</option>
+          <option value="cobertura">Cobertura (alguien cubrió por mí)</option>
+          <option value="intercambio">Intercambio (cambiamos turnos)</option>
+        </select>
+      </div>
+
+      <div class="mb-3">
+        <label for="responsable_id" class="form-label">¿Quién durmió esa noche?</label>
+        <select class="form-select" id="responsable_id" name="responsable_id" required>
+          {% for c in cuidadores %}
+            <option value="{{ c.id }}" data-color="{{ c.color }}">{{ c.nombre }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      {# Bloque que se oculta cuando tipo=normal. #}
+      <div class="mb-3" id="bloque-original">
+        <label for="turno_original_id" class="form-label">¿A quién le correspondía originalmente?</label>
+        <select class="form-select" id="turno_original_id" name="turno_original_id">
+          {% for c in cuidadores %}
+            <option value="{{ c.id }}">{{ c.nombre }}</option>
+          {% endfor %}
+        </select>
+        <div class="form-text">Solo aplica si es cobertura o intercambio.</div>
+      </div>
+
+      <div class="mb-3">
+        <label for="notas" class="form-label">Notas</label>
+        <textarea class="form-control" id="notas" name="notas" rows="3"
+                  placeholder="Opcional"></textarea>
+      </div>
+
+      <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-primary">Guardar</button>
+        <a href="{% url 'index' %}" class="btn btn-outline-secondary">Cancelar</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+  // Referencias a los inputs del form.
+  const form = document.getElementById('form-registrar');
+  const tipoEl = document.getElementById('tipo');
+  const responsableEl = document.getElementById('responsable_id');
+  const originalEl = document.getElementById('turno_original_id');
+  const bloqueOriginal = document.getElementById('bloque-original');
+  const alerta = document.getElementById('alerta');
+
+  /**
+   * Si el tipo es "normal", la persona que durmió ES la persona a la
+   * que le correspondía: ocultamos el select de "original" y forzamos
+   * su valor para que el body POST sea consistente.
+   */
+  function syncOriginal() {
+    if (tipoEl.value === 'normal') {
+      bloqueOriginal.classList.add('d-none');
+      originalEl.value = responsableEl.value;
+    } else {
+      bloqueOriginal.classList.remove('d-none');
+    }
+  }
+  tipoEl.addEventListener('change', syncOriginal);
+  responsableEl.addEventListener('change', () => {
+    // Si tipo=normal y se cambia el responsable, también cambia "original".
+    if (tipoEl.value === 'normal') originalEl.value = responsableEl.value;
+  });
+  // Disparar una vez al cargar para arrancar consistente.
+  syncOriginal();
+
+  /**
+   * Muestra el banner de alerta en la página.
+   * @param {string} msg
+   * @param {string} kind  'success' | 'danger' | 'warning' | etc.
+   */
+  function showAlert(msg, kind) {
+    alerta.textContent = msg;
+    alerta.className = 'alert alert-' + kind;
+  }
+
+  // Submit del form: en lugar de POST tradicional, hacemos fetch JSON
+  // contra la API para poder mostrar errores sin recargar la página.
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+
+    // Garantía final por si algo desincronizó "original" antes del submit.
+    if (tipoEl.value === 'normal') originalEl.value = responsableEl.value;
+
+    // Armamos el body JSON con los IDs como números enteros.
+    const payload = {
+      fecha: document.getElementById('fecha').value,
+      responsable_id: parseInt(responsableEl.value, 10),
+      turno_original_id: parseInt(originalEl.value, 10),
+      tipo: tipoEl.value,
+      notas: document.getElementById('notas').value || ''
+    };
+
+    fetch('/api/turnos/registrar/', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        // CSRF: lo dejó listo base.html en window.csrfToken.
+        'X-CSRFToken': window.csrfToken || ''
+      },
+      body: JSON.stringify(payload)
+    }).then(async (r) => {
+      if (r.ok) {
+        // Éxito → volvemos al calendario, que va a mostrar el cambio.
+        window.location.href = '/';
+        return;
+      }
+      // Error 4xx/5xx: mostramos el detail del backend si existe.
+      const data = await r.json().catch(() => ({}));
+      showAlert(data.detail || JSON.stringify(data) || 'Error al guardar', 'danger');
+    }).catch(err => showAlert('Error de red: ' + err, 'danger'));
+  });
+})();
+</script>
+{% endblock %}

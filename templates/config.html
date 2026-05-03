@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+{% comment %}
+  config.html — Pantalla para crear un nuevo CicloConfig.
+
+  Muestra el ciclo activo (si hay) en una card informativa, y un form que
+  permite definir el intervalo, la fecha de inicio, qué cuidadores incluir
+  y en qué orden.
+{% endcomment %}
+
+{% block title %}Configuración - No Me Olvido{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-8">
+    <h1 class="h3 mb-3">Configurar ciclo</h1>
+
+    {# --- Card con la info del ciclo actualmente activo --- #}
+    {% if ciclo %}
+      <div class="card mb-4">
+        <div class="card-body">
+          <h2 class="h5 card-title">Ciclo actual</h2>
+          <p class="card-text">
+            Cada <strong>{{ ciclo.intervalo_dias }}</strong> día(s) desde
+            <strong>{{ ciclo.fecha_inicio }}</strong>.
+          </p>
+          <ol class="mb-0">
+            {% for orden in ciclo.cuidadores_ordenados %}
+              <li>
+                <span class="legend-dot" style="background: {{ orden.cuidador.color }}"></span>
+                {{ orden.cuidador.nombre }}
+              </li>
+            {% endfor %}
+          </ol>
+        </div>
+      </div>
+    {% else %}
+      <div class="alert alert-warning">No hay ciclo configurado todavía.</div>
+    {% endif %}
+
+    <h2 class="h5 mb-3">Crear nuevo ciclo</h2>
+
+    {# Banner de error/info: lo manipula JS. #}
+    <div id="alerta" class="alert d-none" role="alert"></div>
+
+    <form id="form-ciclo" class="card card-body">
+      <div class="mb-3">
+        <label for="intervalo_dias" class="form-label">
+          Intervalo (días que duerme cada persona seguidos)
+        </label>
+        <input type="number" min="1" class="form-control" id="intervalo_dias" required value="1">
+        <div class="form-text">
+          Con <strong>1</strong> y 3 cuidadores la rotación es diaria
+          (cada noche le toca al siguiente).
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <label for="fecha_inicio" class="form-label">Fecha de inicio</label>
+        {# El value se setea por JS al día actual. #}
+        <input type="date" class="form-control" id="fecha_inicio" required>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label">Orden de cuidadores</label>
+        <p class="form-text mb-2">Asigná una posición a cada cuidador (0 va primero).</p>
+        <div class="row g-2">
+          {% for c in cuidadores %}
+            <div class="col-md-4">
+              <div class="card card-body p-2">
+                <label class="form-check-label d-flex align-items-center mb-2">
+                  {# Checkbox: si está apagado, este cuidador NO se incluye. #}
+                  <input type="checkbox" class="form-check-input me-2 cuidador-incluir"
+                         data-id="{{ c.id }}" checked>
+                  <span class="legend-dot" style="background:{{ c.color }}"></span>
+                  {{ c.nombre }}
+                </label>
+                {# Posición: el JS los ordena por este número antes de mandar. #}
+                <input type="number" min="0" class="form-control form-control-sm cuidador-pos"
+                       data-id="{{ c.id }}" value="{{ forloop.counter0 }}">
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-primary">Crear ciclo</button>
+        <a href="{% url 'index' %}" class="btn btn-outline-secondary">Cancelar</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+  const form = document.getElementById('form-ciclo');
+  const alerta = document.getElementById('alerta');
+  const fechaInicio = document.getElementById('fecha_inicio');
+
+  // Default: el día actual (en formato YYYY-MM-DD que requiere <input type="date">).
+  fechaInicio.value = dayjs().format('YYYY-MM-DD');
+
+  /** Muestra el banner de alerta con un mensaje y un kind de Bootstrap. */
+  function showAlert(msg, kind) {
+    alerta.textContent = msg;
+    alerta.className = 'alert alert-' + kind;
+  }
+
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+
+    // 1) Recolectar los cuidadores marcados con su posición.
+    const filas = Array.from(document.querySelectorAll('.cuidador-incluir'))
+      .filter(el => el.checked)
+      .map(el => {
+        const id = parseInt(el.dataset.id, 10);
+        const posEl = document.querySelector(`.cuidador-pos[data-id="${id}"]`);
+        return { id, posicion: parseInt(posEl.value, 10) };
+      });
+
+    if (filas.length === 0) {
+      showAlert('Debes incluir al menos un cuidador.', 'danger');
+      return;
+    }
+
+    // 2) Ordenar por la posición que ingresó el usuario y quedarnos con
+    //    la lista de IDs en ese orden (lo que espera el backend).
+    filas.sort((a, b) => a.posicion - b.posicion);
+    const cuidadores_ordenados = filas.map(f => f.id);
+
+    // 3) Body JSON.
+    const payload = {
+      intervalo_dias: parseInt(document.getElementById('intervalo_dias').value, 10),
+      fecha_inicio: fechaInicio.value,
+      cuidadores_ordenados
+    };
+
+    // 4) POST a la API.
+    fetch('/api/ciclo/crear/', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': window.csrfToken || ''
+      },
+      body: JSON.stringify(payload)
+    }).then(async (r) => {
+      if (r.ok) {
+        // Recargamos la página para que la card "Ciclo actual" muestre el nuevo.
+        window.location.reload();
+        return;
+      }
+      const data = await r.json().catch(() => ({}));
+      showAlert(data.detail || JSON.stringify(data) || 'Error al guardar', 'danger');
+    }).catch(err => showAlert('Error de red: ' + err, 'danger'));
+  });
+})();
+</script>
+{% endblock %}

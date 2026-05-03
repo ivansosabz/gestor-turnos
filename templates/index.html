@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% comment %}
+  index.html — Pantalla principal con el calendario interactivo.
+
+  Consume /api/calendario/ y /api/cuidadores/ vía fetch. Cada celda del
+  calendario se pinta del color del cuidador asignado a ese día. Click en
+  un día redirige a /registrar/?fecha=YYYY-MM-DD para registrar el turno.
+{% endcomment %}
+
+{% block title %}Calendario - No Me Olvido{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <h1 class="h3 m-0">Calendario de turnos</h1>
+  <a href="{% url 'registrar' %}" class="btn btn-primary">Registrar turno</a>
+</div>
+
+{# Leyenda de cuidadores (se rellena vía JS para no duplicar lógica). #}
+<div id="leyenda" class="mb-3"></div>
+
+<div class="calendar-card">
+  <div id="calendar"></div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// IIFE para no contaminar el scope global con variables locales.
+(function() {
+  // Referencias a los nodos donde se monta el calendario y la leyenda.
+  const calendarEl = document.getElementById('calendar');
+  const leyendaEl = document.getElementById('leyenda');
+
+  // Cache de los datos del mes actual indexado por fecha "YYYY-MM-DD".
+  // Se llena en cargarMes() y se consulta en pintarDia().
+  let datosPorFecha = {};
+
+  // Track de meses ya cargados para no re-fetch al hacer prev/next sobre el mismo mes.
+  let mesesCargados = new Set();
+
+  /**
+   * Pide /api/cuidadores/ y arma la leyenda con un dot del color de cada uno.
+   */
+  function cargarCuidadores() {
+    return fetch('/api/cuidadores/').then(r => r.json()).then(cuidadores => {
+      leyendaEl.innerHTML = cuidadores.map(c =>
+        `<span class="me-3">
+          <span class="legend-dot" style="background:${c.color}"></span>${c.nombre}
+        </span>`
+      ).join('');
+      return cuidadores;
+    });
+  }
+
+  /**
+   * Pide /api/calendario/?año=Y&mes=M y guarda la respuesta en datosPorFecha.
+   * El backend devuelve una lista de objetos: {fecha, cuidador, tipo, ...}.
+   */
+  function cargarMes(anio, mes) {
+    const clave = `${anio}-${mes}`;
+    if (mesesCargados.has(clave)) {
+      // Ya tenemos los datos de este mes, no hace falta fetch.
+      return Promise.resolve();
+    }
+    return fetch(`/api/calendario/?año=${anio}&mes=${mes}`)
+      .then(r => r.json())
+      .then(dias => {
+        dias.forEach(d => { datosPorFecha[d.fecha] = d; });
+        mesesCargados.add(clave);
+        // En vez de calendar.render() (que re-dispararía datesSet),
+        // repintamos directamente las celdas visibles.
+        document.querySelectorAll('.fc-daygrid-day').forEach(el => {
+          const fechaIso = el.getAttribute('data-date');
+          if (!fechaIso) return;
+          const data = datosPorFecha[fechaIso];
+          if (data && data.cuidador) {
+            el.classList.add('dia-cuidador');
+            el.style.backgroundColor = data.cuidador.color;
+            if (data.es_turno_real) el.classList.add('es-real');
+            el.title =
+              `${data.cuidador.nombre}` +
+              `${data.es_turno_real ? ' (' + data.tipo + ')' : ''}` +
+              `${data.notas ? ' - ' + data.notas : ''}`;
+          }
+        });
+      });
+  }
+
+  /**
+   * Hook de FullCalendar: para cada celda de día, busca el dato cacheado
+   * y pinta el background con el color del cuidador.
+   */
+  function pintarDia(arg) {
+    // arg.date es un Date local; lo formateamos a YYYY-MM-DD con dayjs.
+    const fechaIso = dayjs(arg.date).format('YYYY-MM-DD');
+    const data = datosPorFecha[fechaIso];
+
+    // Si todavía no cargamos los datos del mes, o el día está fuera del
+    // ciclo (sin cuidador asignado), no hacemos nada.
+    if (!data || !data.cuidador) return;
+
+    // Aplicamos clases y color de fondo.
+    arg.el.classList.add('dia-cuidador');
+    arg.el.style.backgroundColor = data.cuidador.color;
+
+    // Si hay TurnoReal registrado, marcamos con la estrella.
+    if (data.es_turno_real) arg.el.classList.add('es-real');
+
+    // Tooltip nativo del navegador con info adicional.
+    arg.el.title =
+      `${data.cuidador.nombre}` +
+      `${data.es_turno_real ? ' (' + data.tipo + ')' : ''}` +
+      `${data.notas ? ' - ' + data.notas : ''}`;
+  }
+
+  // ---- Inicialización ----
+  // Primero cargamos los cuidadores (leyenda) y luego instanciamos el calendar.
+  cargarCuidadores().then(() => {
+    const calendar = new FullCalendar.Calendar(calendarEl, {
+      initialView: 'dayGridMonth',
+      locale: 'es',
+      firstDay: 1,            // semana empieza en lunes
+      height: 'auto',
+      headerToolbar: {
+        left: 'prev,next today',
+        center: 'title',
+        right: ''
+      },
+      buttonText: { today: 'Hoy' },
+
+      // datesSet se dispara al renderizar y cada vez que el usuario
+      // cambia de mes con prev/next/today. Cargamos los datos del mes
+      // visible y repintamos las celdas directamente (sin render, que
+      // causaría un loop infinito porque re-dispara datesSet).
+      datesSet: (info) => {
+        const mid = new Date((info.start.getTime() + info.end.getTime()) / 2);
+        const anio = mid.getFullYear();
+        const mes = mid.getMonth() + 1; // getMonth() es 0-indexed
+        cargarMes(anio, mes);
+      },
+
+      // Hook que pinta cada celda con el color correcto.
+      dayCellDidMount: pintarDia,
+
+      // Click en un día: vamos al form de registrar con la fecha prellena.
+      dateClick: (info) => {
+        window.location.href = `/registrar/?fecha=${info.dateStr}`;
+      }
+    });
+
+    calendar.render();
+  });
+})();
+</script>
+{% endblock %}

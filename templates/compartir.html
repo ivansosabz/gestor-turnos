@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% comment %}
+  compartir.html — Vista de SOLO LECTURA del calendario.
+
+  Sin navbar, sin click en días, sin formularios. Pensada para mandarles
+  el link a Papá y Tío. Reusa el mismo layout pero anula el bloque navbar.
+{% endcomment %}
+
+{% block title %}Calendario compartido - No Me Olvido{% endblock %}
+
+{# Sobreescribimos el navbar con un header mínimo de solo lectura. #}
+{% block navbar %}
+<header class="bg-primary text-white py-2 mb-3">
+  <div class="container">
+    <strong>No Me Olvido</strong>
+    <span class="opacity-75 ms-2">— Calendario de turnos (solo lectura)</span>
+  </div>
+</header>
+{% endblock %}
+
+{% block content %}
+<div id="leyenda" class="mb-3"></div>
+
+<div class="calendar-card">
+  <div id="calendar"></div>
+</div>
+
+<p class="text-muted small mt-3 text-center">
+  Vista de solo lectura para Papá y Tío.
+</p>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Misma lógica que index.html PERO sin handler de dateClick (read-only).
+(function() {
+  const calendarEl = document.getElementById('calendar');
+  const leyendaEl = document.getElementById('leyenda');
+  let datosPorFecha = {};
+  let mesesCargados = new Set();
+
+  /** Carga la leyenda con los cuidadores y sus colores. */
+  function cargarCuidadores() {
+    return fetch('/api/cuidadores/').then(r => r.json()).then(cuidadores => {
+      leyendaEl.innerHTML = cuidadores.map(c =>
+        `<span class="me-3">
+          <span class="legend-dot" style="background:${c.color}"></span>${c.nombre}
+        </span>`
+      ).join('');
+    });
+  }
+
+  /** Carga los días del mes desde la API y los cachea por fecha. */
+  function cargarMes(anio, mes) {
+    const clave = `${anio}-${mes}`;
+    if (mesesCargados.has(clave)) return;
+    return fetch(`/api/calendario/?año=${anio}&mes=${mes}`)
+      .then(r => r.json())
+      .then(dias => {
+        dias.forEach(d => { datosPorFecha[d.fecha] = d; });
+        mesesCargados.add(clave);
+        // Repintamos celdas directamente sin calendar.render() (evita loop).
+        document.querySelectorAll('.fc-daygrid-day').forEach(el => {
+          const fechaIso = el.getAttribute('data-date');
+          if (!fechaIso) return;
+          const data = datosPorFecha[fechaIso];
+          if (data && data.cuidador) {
+            el.classList.add('dia-cuidador');
+            el.style.backgroundColor = data.cuidador.color;
+            if (data.es_turno_real) el.classList.add('es-real');
+            el.title =
+              `${data.cuidador.nombre}` +
+              `${data.es_turno_real ? ' (' + data.tipo + ')' : ''}` +
+              `${data.notas ? ' - ' + data.notas : ''}`;
+          }
+        });
+      });
+  }
+
+  /** Pinta cada celda con el color del cuidador asignado. */
+  function pintarDia(arg) {
+    const fechaIso = dayjs(arg.date).format('YYYY-MM-DD');
+    const data = datosPorFecha[fechaIso];
+    if (!data || !data.cuidador) return;
+    arg.el.classList.add('dia-cuidador');
+    arg.el.style.backgroundColor = data.cuidador.color;
+    if (data.es_turno_real) arg.el.classList.add('es-real');
+    arg.el.title =
+      `${data.cuidador.nombre}` +
+      `${data.es_turno_real ? ' (' + data.tipo + ')' : ''}` +
+      `${data.notas ? ' - ' + data.notas : ''}`;
+  }
+
+  cargarCuidadores().then(() => {
+    const calendar = new FullCalendar.Calendar(calendarEl, {
+      initialView: 'dayGridMonth',
+      locale: 'es',
+      firstDay: 1,
+      height: 'auto',
+      headerToolbar: { left: 'prev,next today', center: 'title', right: '' },
+      buttonText: { today: 'Hoy' },
+      datesSet: (info) => {
+        const mid = new Date((info.start.getTime() + info.end.getTime()) / 2);
+        cargarMes(mid.getFullYear(), mid.getMonth() + 1);
+      },
+      dayCellDidMount: pintarDia
+      // Nota: NO definimos dateClick aquí — esta vista es de solo lectura.
+    });
+    calendar.render();
+  });
+})();
+</script>
+{% endblock %}

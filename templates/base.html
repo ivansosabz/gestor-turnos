@@ -1,0 +1,120 @@
+{% comment %}
+  base.html — layout común a todas las páginas.
+  Define <head> con CDN de Bootstrap/FullCalendar/dayjs, navbar (bloqueable
+  por compartir.html), bloques `content` y `extra_js`, y registro del PWA.
+{% endcomment %}
+{% load static %}<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>{% block title %}No Me Olvido{% endblock %}</title>
+
+  {# --- PWA: manifest + theme color + meta tags para iOS --- #}
+  <link rel="manifest" href="{% static 'manifest.json' %}">
+  <meta name="theme-color" content="#0d6efd">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Turnos">
+  <link rel="apple-touch-icon" href="{% static 'icons/icon-192.png' %}">
+
+  {# --- CDN: Bootstrap 5 CSS + FullCalendar CSS --- #}
+  <link
+    href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+    rel="stylesheet"
+    integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH"
+    crossorigin="anonymous">
+  <link
+    href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.css"
+    rel="stylesheet">
+
+  <style>
+    /* Estilos propios de la app (mínimos: el resto los pone Bootstrap). */
+    body { padding-bottom: 2rem; }
+    .calendar-card { background: #fff; padding: 1rem; border-radius: .5rem; box-shadow: 0 .125rem .25rem rgba(0,0,0,.075); }
+    #calendar { max-width: 960px; margin: 0 auto; }
+
+    /* .dia-cuidador se agrega vía JS al fc-day para pintar el fondo
+       con el color del cuidador. */
+    .fc-day.dia-cuidador { transition: background-color .2s ease; }
+    .fc-day.dia-cuidador .fc-daygrid-day-frame { color: #fff; }
+    .fc-day.dia-cuidador .fc-daygrid-day-number { color: #fff; font-weight: 600; }
+
+    /* .es-real marca los días que tienen TurnoReal registrado: ★ arriba a la derecha. */
+    .fc-day.es-real::after {
+      content: "★";
+      position: absolute; top: 4px; right: 6px;
+      font-size: .75rem; color: #fff; opacity: .9;
+    }
+
+    .legend-dot {
+      display: inline-block; width: 12px; height: 12px;
+      border-radius: 50%; margin-right: 6px; vertical-align: middle;
+    }
+  </style>
+
+  {% block extra_head %}{% endblock %}
+</head>
+<body class="bg-light">
+
+{# El bloque navbar es vacío en compartir.html (vista solo lectura). #}
+{% block navbar %}
+<nav class="navbar navbar-expand-lg bg-primary navbar-dark mb-3">
+  <div class="container">
+    <a class="navbar-brand" href="{% url 'index' %}">No Me Olvido</a>
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+    <div class="collapse navbar-collapse" id="nav">
+      <ul class="navbar-nav ms-auto">
+        <li class="nav-item"><a class="nav-link" href="{% url 'index' %}">Calendario</a></li>
+        <li class="nav-item"><a class="nav-link" href="{% url 'registrar' %}">Registrar</a></li>
+        <li class="nav-item"><a class="nav-link" href="{% url 'compartir' %}">Compartir</a></li>
+        <li class="nav-item"><a class="nav-link" href="{% url 'config' %}">Configuración</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+{% endblock %}
+
+<main class="container">
+  {% block content %}{% endblock %}
+</main>
+
+{# --- Scripts JS al final para no bloquear el render --- #}
+<script
+  src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
+  integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz"
+  crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.13/dayjs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js"></script>
+
+<script>
+  // --- Helper para leer el CSRF token desde la cookie ---
+  // Django setea la cookie `csrftoken` en respuestas que pasan por
+  // @ensure_csrf_cookie. La leemos para enviarla en el header X-CSRFToken
+  // al hacer POSTs a la API (la API usa SessionAuthentication, que valida CSRF).
+  function getCookie(name) {
+    const value = `; ${document.cookie}`;
+    const parts = value.split(`; ${name}=`);
+    if (parts.length === 2) return parts.pop().split(';').shift();
+    return null;
+  }
+  // Lo guardamos en window para que los templates hijos lo lean fácil.
+  window.csrfToken = getCookie('csrftoken');
+
+  // --- Registro del Service Worker (PWA) ---
+  // Lo registramos solo si el navegador lo soporta; cualquier error queda
+  // logueado pero no rompe la app.
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register("{% static 'sw.js' %}").catch((err) => {
+        console.warn('SW registration failed', err);
+      });
+    });
+  }
+</script>
+
+{% block extra_js %}{% endblock %}
+</body>
+</html>
