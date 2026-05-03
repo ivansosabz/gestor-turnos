@@ -6,9 +6,14 @@ Uso:
 Crea los 3 cuidadores (Iván, Antonio, José) y un CicloConfig activo cuya
 rotación es DIARIA (intervalo_dias=1): cada día le toca a la siguiente
 persona del orden.
+
+Si las variables de entorno DJANGO_ADMIN_USERNAME y DJANGO_ADMIN_PASSWORD
+están definidas, también crea un superusuario para acceder al admin.
 """
+import os
 from datetime import date
 
+from django.contrib.auth.models import User
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
@@ -93,3 +98,30 @@ class Command(BaseCommand):
                 f"{[d['nombre'] for d in CUIDADORES_INICIALES]}."
             )
         )
+
+        # ---- 3) Crear superusuario si hay credenciales en el entorno ----
+        admin_user = os.environ.get("DJANGO_ADMIN_USERNAME")
+        admin_pass = os.environ.get("DJANGO_ADMIN_PASSWORD")
+
+        if admin_user and admin_pass:
+            if User.objects.filter(username=admin_user).exists():
+                self.stdout.write(
+                    self.style.WARNING(
+                        f"El usuario '{admin_user}' ya existe. No se crea."
+                    )
+                )
+            else:
+                User.objects.create_superuser(admin_user, "", admin_pass)
+                self.stdout.write(
+                    self.style.SUCCESS(
+                        f"Superusuario '{admin_user}' creado. "
+                        f"Accedé a /admin/ con esas credenciales."
+                    )
+                )
+        elif admin_user or admin_pass:
+            self.stdout.write(
+                self.style.ERROR(
+                    "Para crear el superusuario necesitás definir AMBAS variables: "
+                    "DJANGO_ADMIN_USERNAME y DJANGO_ADMIN_PASSWORD."
+                )
+            )
