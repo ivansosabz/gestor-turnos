@@ -4,25 +4,34 @@ services:
     env: python
     region: sao-paulo
     plan: free
-    buildCommand: pip install -r requirements.txt && python manage.py collectstatic --noinput && python manage.py migrate
+
+    buildCommand: >
+      pip install -r requirements.txt &&
+      python manage.py collectstatic --noinput &&
+      python manage.py migrate
+
     startCommand: gunicorn no_me_olvido.wsgi:application
+
     envVars:
       - key: DATABASE_URL
         fromDatabase:
           name: no-me-olvido-db
           property: connectionString
+
       - key: DJANGO_SECRET_KEY
         generateValue: true
+
       - key: DJANGO_DEBUG
         value: "False"
+
       - key: DJANGO_ALLOWED_HOSTS
-        sync: false
+        value: no-me-olvido.onrender.com
+
       - key: CSRF_TRUSTED_ORIGINS
-        sync: false
+        value: https://no-me-olvido.onrender.com
 
 databases:
   - name: no-me-olvido-db
     databaseName: no_me_olvido
     region: sao-paulo
     plan: free
-    ipAllowList: []
